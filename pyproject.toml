@@ -1,0 +1,62 @@
+[project]
+name = "ons-energy"
+version = "0.1.0"
+description = "Load forecasting and multivariate anomaly detection on Brazilian grid operator (ONS) open data"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # data
+    "polars>=1.0",
+    "pandas>=2.2",
+    "pyarrow>=16",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+    "holidays>=0.50",
+    # modeling / stats
+    "scipy>=1.12",
+    "scikit-learn>=1.4",
+    "lightgbm>=4.3",
+    "statsforecast>=1.7",
+    "mlforecast>=0.13",
+    "utilsforecast>=0.2",
+    # tooling
+    "typer>=0.12",
+    "mlflow>=2.12",
+    "matplotlib>=3.8",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+ons = "ons_energy.cli:app"
+
+[dependency-groups]
+# Deep learning stack (TFT / N-BEATS / N-HiTS via NeuralForecast, MSCVAE, LSTM-AE).
+dl = [
+    "torch>=2.3",
+    "neuralforecast>=1.7",
+]
+dev = [
+    "pytest>=8.0",
+    "ipykernel>=6.29",
+    "jupyterlab>=4.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ons_energy"]
+
+[tool.uv]
+default-groups = ["dev", "dl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not network'"
+markers = [
+    "network: tests that hit the ONS / Open-Meteo APIs (deselected by default)",
+    "slow: long-running tests (model training)",
+]

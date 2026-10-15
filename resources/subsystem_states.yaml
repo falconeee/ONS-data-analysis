@@ -1,0 +1,24 @@
+# Federative units (UF) per ONS subsystem, and the representative city used for weather.
+# A city's weather weight = sum of the load shares of the UFs it represents (shares estimated from the
+# ONS load API by UF; TO has no own load area in the API and gets no weight).
+subsystems:
+  SE: [SP, RJ, ES, MG, GO, DF, MT, MS, AC, RO]
+  S: [PR, SC, RS]
+  NE: [BA, SE, AL, PE, PB, RN, CE, PI]
+  N: [PA, TO, MA, AM, AP, RR]
+
+cities:
+  sao_paulo:      {lat: -23.55, lon: -46.63, subsystem: SE, ufs: [SP]}
+  rio_de_janeiro: {lat: -22.91, lon: -43.17, subsystem: SE, ufs: [RJ, ES]}
+  belo_horizonte: {lat: -19.92, lon: -43.94, subsystem: SE, ufs: [MG]}
+  brasilia:       {lat: -15.79, lon: -47.88, subsystem: SE, ufs: [DF]}
+  goiania:        {lat: -16.68, lon: -49.25, subsystem: SE, ufs: [GO, MT, MS, AC, RO]}
+  curitiba:       {lat: -25.43, lon: -49.27, subsystem: S, ufs: [PR]}
+  porto_alegre:   {lat: -30.03, lon: -51.23, subsystem: S, ufs: [RS]}
+  florianopolis:  {lat: -27.59, lon: -48.55, subsystem: S, ufs: [SC]}
+  salvador:       {lat: -12.97, lon: -38.50, subsystem: NE, ufs: [BA, SE, AL]}
+  recife:         {lat: -8.05,  lon: -34.88, subsystem: NE, ufs: [PE, PB, RN]}
+  fortaleza:      {lat: -3.73,  lon: -38.52, subsystem: NE, ufs: [CE, PI]}
+  belem:          {lat: -1.46,  lon: -48.49, subsystem: N, ufs: [PA, AP, TO]}
+  manaus:         {lat: -3.12,  lon: -60.02, subsystem: N, ufs: [AM, RR]}
+  sao_luis:       {lat: -2.53,  lon: -44.30, subsystem: N, ufs: [MA]}

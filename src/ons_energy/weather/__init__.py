@@ -1,0 +1,1 @@
+"""Weather covariates (Open-Meteo)."""

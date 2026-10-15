@@ -1,0 +1,35 @@
+event_id,kind,start_local,end_local,subsystems,description,source
+wc2014_cro,worldcup_match,2014-06-12 17:00,2014-06-12 19:00,SIN,World Cup 2014 group: Brazil 3-1 Croatia,FIFA
+wc2014_mex,worldcup_match,2014-06-17 16:00,2014-06-17 18:00,SIN,World Cup 2014 group: Brazil 0-0 Mexico,FIFA
+wc2014_cmr,worldcup_match,2014-06-23 17:00,2014-06-23 19:00,SIN,World Cup 2014 group: Cameroon 1-4 Brazil,FIFA
+wc2014_chi,worldcup_match,2014-06-28 13:00,2014-06-28 15:30,SIN,World Cup 2014 R16: Brazil 1-1 Chile (pens),FIFA
+wc2014_col,worldcup_match,2014-07-04 17:00,2014-07-04 19:00,SIN,World Cup 2014 QF: Brazil 2-1 Colombia,FIFA
+wc2014_ger,worldcup_match,2014-07-08 17:00,2014-07-08 19:00,SIN,World Cup 2014 SF: Brazil 1-7 Germany,FIFA
+wc2014_ned,worldcup_match,2014-07-12 17:00,2014-07-12 19:00,SIN,World Cup 2014 3rd place: Brazil 0-3 Netherlands,FIFA
+wc2018_sui,worldcup_match,2018-06-17 15:00,2018-06-17 17:00,SIN,World Cup 2018 group: Brazil 1-1 Switzerland,FIFA
+wc2018_crc,worldcup_match,2018-06-22 09:00,2018-06-22 11:00,SIN,World Cup 2018 group: Brazil 2-0 Costa Rica,FIFA
+wc2018_srb,worldcup_match,2018-06-27 15:00,2018-06-27 17:00,SIN,World Cup 2018 group: Serbia 0-2 Brazil,FIFA
+wc2018_mex,worldcup_match,2018-07-02 11:00,2018-07-02 13:00,SIN,World Cup 2018 R16: Brazil 2-0 Mexico,FIFA
+wc2018_bel,worldcup_match,2018-07-06 15:00,2018-07-06 17:00,SIN,World Cup 2018 QF: Brazil 1-2 Belgium,FIFA
+wc2022_srb,worldcup_match,2022-11-24 16:00,2022-11-24 18:00,SIN,World Cup 2022 group: Brazil 2-0 Serbia,FIFA
+wc2022_sui,worldcup_match,2022-11-28 13:00,2022-11-28 15:00,SIN,World Cup 2022 group: Brazil 1-0 Switzerland,FIFA
+wc2022_cmr,worldcup_match,2022-12-02 16:00,2022-12-02 18:00,SIN,World Cup 2022 group: Cameroon 1-0 Brazil,FIFA
+wc2022_kor,worldcup_match,2022-12-05 16:00,2022-12-05 18:00,SIN,World Cup 2022 R16: Brazil 4-1 South Korea,FIFA
+wc2022_cro,worldcup_match,2022-12-09 12:00,2022-12-09 14:30,SIN,World Cup 2022 QF: Croatia 1-1 Brazil (pens),FIFA
+wc2026_mar,worldcup_match,2026-06-13 19:00,2026-06-13 21:00,SIN,World Cup 2026 group: Brazil 1-1 Morocco,FIFA / press
+wc2026_hai,worldcup_match,2026-06-19 22:00,2026-06-20 00:00,SIN,World Cup 2026 group: Brazil vs Haiti,FIFA / press
+wc2026_sco,worldcup_match,2026-06-24 19:00,2026-06-24 21:00,SIN,World Cup 2026 group: Scotland 0-3 Brazil,FIFA
+wc2026_jpn,worldcup_match,2026-06-29 14:00,2026-06-29 16:00,SIN,World Cup 2026 R32: Brazil 2-1 Japan,FIFA
+wc2026_nor,worldcup_match,2026-07-05 17:00,2026-07-05 19:00,SIN,World Cup 2026 R16: Brazil 1-2 Norway,FIFA / CNN Brasil
+rationing_2001,rationing,2001-06-01 00:00,2002-02-28 23:00,SE;NE;N,Energy rationing (2001-2002 crisis),ONS / GCE
+blackout_2009_11_10,blackout,2009-11-10 22:13,2009-11-11 03:00,SE;S;NE;N,Itaipu transmission blackout (~24 GW),ONS RAP
+blackout_2011_02_04,blackout,2011-02-04 00:08,2011-02-04 05:00,NE,Northeast blackout (8 states),ONS RAP
+blackout_2018_03_21,blackout,2018-03-21 15:48,2018-03-21 21:00,NE;N,Belo Monte/Xingu blackout (N/NE),ONS RAP
+blackout_2020_11_03,blackout,2020-11-03 20:00,2020-11-24 23:00,N,Amapa blackout (Macapa substation fire),ONS
+blackout_2023_08_15,blackout,2023-08-15 08:30,2023-08-15 15:00,SE;S;NE;N,SIN blackout (N/NE separation; ~22 GW),ONS RAP
+truckers_strike_2018,strike,2018-05-21 00:00,2018-05-31 23:00,SIN,Truckers strike (fuel/supply disruption),press
+covid_2020,covid,2020-03-16 00:00,2020-06-30 23:00,SIN,COVID-19 lockdown / load drop,press
+hydro_crisis_2014,hydro_crisis,2014-01-01 00:00,2015-11-30 23:00,SE;NE,2014-2015 drought (low EAR / high thermal),ONS
+hydro_crisis_2021,hydro_crisis,2021-06-01 00:00,2021-11-30 23:00,SE;S,2021 water crisis (CREG emergency),ONS / CREG
+method_2021_03,methodology_break,2021-03-01 00:00,2021-03-01 23:00,SIN,Load starts including non-dispatched generation forecast,ONS dataset notes
+method_2023_04,methodology_break,2023-04-29 00:00,2023-04-29 23:00,SIN,Load starts including estimated MMGD,ONS dataset notes
