@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, Dataset, ConcatDataset
-from ons_energy.utils.logging import logger
+from ons_energy.utils import logger
 
 # Helper Classes
 class AttributeMatrixGenerator:

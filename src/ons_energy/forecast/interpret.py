@@ -17,7 +17,7 @@ import pandas as pd
 from ons_energy.calendar.segments import day_types
 from ons_energy.features.forecast import build_panel
 from ons_energy.forecast.config import BacktestConfig
-from ons_energy.utils.logging import get_logger
+from ons_energy.utils import get_logger
 
 log = get_logger(__name__)
 

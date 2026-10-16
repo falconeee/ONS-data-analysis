@@ -21,7 +21,7 @@ MODEL_COLORS = {
     "ONS": SERIES[0], "LightGBM": SERIES[1], "TFT": SERIES[2], "NHITS": SERIES[3],
     "NBEATSx": SERIES[4], "NBEATS_I": SERIES[5], "SeasonalNaive": SERIES[6], "ONS_adj": SERIES[7],
 }
-DETECTOR_COLORS = {"PCA": SERIES[0], "DPCA": SERIES[2], "RPCA": SERIES[3], "MSCVAE": SERIES[1]}
+DETECTOR_COLORS = {"PCA": SERIES[0], "MSCVAE": SERIES[1]}
 
 
 def apply_style() -> None:
@@ -38,7 +38,7 @@ def apply_style() -> None:
 
 
 def detector_color(name: str) -> str:
-    for key in ("MSCVAE", "DPCA", "RPCA", "PCA"):
+    for key in ("MSCVAE", "PCA"):
         if name.startswith(key):
             return DETECTOR_COLORS[key]
     return INK_2

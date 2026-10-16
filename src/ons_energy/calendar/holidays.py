@@ -12,7 +12,7 @@ import polars as pl
 import yaml
 from holidays.constants import OPTIONAL, PUBLIC
 
-from ons_energy.utils.io import PROCESSED_DIR, RESOURCES_DIR
+from ons_energy.utils import PROCESSED_DIR, RESOURCES_DIR
 
 SUBSYSTEMS = ("SE", "S", "NE", "N")
 

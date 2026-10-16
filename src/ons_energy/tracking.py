@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from ons_energy.utils.io import PROCESSED_DIR, PROJECT_ROOT
+from ons_energy.utils import PROCESSED_DIR, PROJECT_ROOT
 
 TRACKING_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
 ARTIFACT_ROOT = PROJECT_ROOT / "mlruns"

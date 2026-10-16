@@ -7,7 +7,6 @@ import pandas as pd
 
 from ons_energy.calendar.segments import DAY_TYPES, day_types
 from ons_energy.forecast import metrics as M
-from ons_energy.forecast.stats_tests import diebold_mariano
 
 QUANTILES = [0.05, 0.1, 0.5, 0.9, 0.95]
 
@@ -81,9 +80,9 @@ def dm_table(cv: pd.DataFrame, reference: str) -> pd.DataFrame:
             continue
         loss = daily_loss(cv, m)
         both = pd.concat([loss, ref], axis=1, keys=["m", "r"]).dropna()
-        res = diebold_mariano(both["m"].to_numpy(), both["r"].to_numpy())
-        rows.append({"model": m, "vs": reference, "DM": res.statistic, "p_value": res.p_value,
-                     "mean_diff_pp": 100 * res.mean_diff, "n_days": res.n})
+        res = M.diebold_mariano(both["m"].to_numpy(), both["r"].to_numpy())
+        rows.append({"model": m, "vs": reference, "DM": res["statistic"], "p_value": res["p_value"],
+                     "mean_diff_pp": 100 * res["mean_diff"], "n_days": res["n"]})
     return pd.DataFrame(rows)
 
 

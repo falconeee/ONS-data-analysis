@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import polars as pl
 
-from ons_energy.utils.io import PROCESSED_DIR, RESOURCES_DIR
+from ons_energy.utils import PROCESSED_DIR, RESOURCES_DIR
 
 ALL_SUBSYSTEMS = ["SE", "S", "NE", "N"]
 

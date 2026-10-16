@@ -1,1 +1,1 @@
-"""Standardized figures for reports and the README."""
+"""Figures shown in the notebooks."""

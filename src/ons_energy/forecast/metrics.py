@@ -1,6 +1,8 @@
-"""Point and probabilistic forecast metrics (NumPy, NaN-safe inputs are the caller's job)."""
+"""Point and probabilistic forecast metrics and the Diebold-Mariano test (NumPy; NaN-safe inputs
+are the caller's job)."""
 
 import numpy as np
+from scipy import stats
 
 
 def mae(y: np.ndarray, yhat: np.ndarray) -> float:
@@ -46,3 +48,17 @@ def coverage(y: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> float:
 
 def interval_width(lo: np.ndarray, hi: np.ndarray) -> float:
     return float(np.mean(hi - lo))
+
+
+def diebold_mariano(loss_a: np.ndarray, loss_b: np.ndarray, h: int = 1) -> dict[str, float]:
+    """Two-sided Diebold-Mariano test with the Harvey-Leybourne-Newbold correction; negative
+    statistic = model A better. Use one loss per forecast occasion (e.g. daily MAPE): hourly errors
+    within a day are strongly dependent. Newey-West variance with n^(1/3) lags."""
+    d = np.asarray(loss_a, float) - np.asarray(loss_b, float)
+    d = d[~np.isnan(d)]
+    n = d.size
+    lags = max(h - 1, int(np.floor(n ** (1 / 3))))
+    dc = d - d.mean()
+    var = dc @ dc / n + sum(2 * (1 - k / (lags + 1)) * (dc[k:] @ dc[:-k]) / n for k in range(1, lags + 1))
+    stat = np.sqrt((n + 1 - 2 * h + h * (h - 1) / n) / n) * d.mean() / np.sqrt(var / n)
+    return {"statistic": float(stat), "p_value": float(2 * stats.t.sf(np.abs(stat), df=n - 1)), "mean_diff": float(d.mean()), "n": n}

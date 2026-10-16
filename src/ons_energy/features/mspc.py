@@ -1,24 +1,20 @@
-"""Monitoring matrices for Module 2 (one column per ``<subsystem>_<quantity>``).
+"""Hourly monitoring matrix for Module 2: one column per ``<subsystem>_<quantity>``.
 
-hourly: load, hydro, thermal (ex-nuclear), wind, solar, net interchange per subsystem + nuclear (SE)
-daily : daily means of the hourly variables + EAR (% of max) and ENA (% of long-term mean)
-
-EAR/ENA are daily, so they only enter the daily model (no artificial intra-day variability).
+Per subsystem: load, hydro, thermal (ex-nuclear), wind, solar and net interchange, plus SE nuclear.
 """
 
 import pandas as pd
 import polars as pl
 
-from ons_energy.utils.io import PROCESSED_DIR
+from ons_energy.utils import PROCESSED_DIR
 
 SUBSYSTEMS = ["SE", "S", "NE", "N"]
 HOURLY_VARS = ["load", "hydro", "thermal", "wind", "solar", "interchange"]
-DAILY_HYDRO = {"ear_pct": "ear", "ena_pct_mlt": "ena"}
 
 DESCRIPTIONS = {
     "load": "load (MWmed)", "hydro": "hydro generation", "thermal": "thermal generation (ex-nuclear)",
     "wind": "wind generation", "solar": "solar generation", "interchange": "net interchange (export > 0)",
-    "nuclear": "nuclear generation (Angra)", "ear": "stored energy EAR (% max)", "ena": "natural inflow ENA (% MLT)",
+    "nuclear": "nuclear generation (Angra)",
 }
 
 
@@ -37,17 +33,11 @@ def hourly_matrix(start: str | None = None, end: str | None = None) -> pd.DataFr
     return wide.to_pandas().set_index("ts_local")[cols].asfreq("h")
 
 
-def daily_matrix(start: str | None = None, end: str | None = None) -> pd.DataFrame:
-    hourly = hourly_matrix(start, end)
-    daily = hourly.resample("D").mean()
-    hydro = pl.read_parquet(PROCESSED_DIR / "hydro_daily.parquet").filter(pl.col("subsystem").is_in(SUBSYSTEMS))
-    hw = hydro.pivot(on="subsystem", index="date", values=list(DAILY_HYDRO)).to_pandas()
-    hw["date"] = pd.to_datetime(hw["date"])
-    hw = hw.set_index("date")
-    hw.columns = [f"{c.rsplit('_', 1)[1]}_{DAILY_HYDRO[c.rsplit('_', 1)[0]]}" for c in hw.columns]
-    out = daily.join(hw, how="left")
-    order = [f"{s}_{v}" for s in SUBSYSTEMS for v in HOURLY_VARS + list(DAILY_HYDRO.values())] + ["SE_nuclear"]
-    return out[order].asfreq("D")
+def weekly_residuals(X: pd.DataFrame, n_weeks: int = 4) -> pd.DataFrame:
+    """Causal deseasonalization: x_t minus the mean of the same hour in the previous ``n_weeks``
+    weeks. Removes daily/weekly cycles and follows growth and level shifts within weeks, so PCA
+    sees (roughly) stationary data; the first ``n_weeks`` weeks are NaN."""
+    return X - sum(X.shift(168 * k) for k in range(1, n_weeks + 1)) / n_weeks
 
 
 def variable_table(columns: list[str]) -> pd.DataFrame:
@@ -61,12 +51,12 @@ def variable_table(columns: list[str]) -> pd.DataFrame:
 
 def negligible_variables(X: pd.DataFrame, min_share: float) -> list[str]:
     """Generation/interchange columns whose mean |level| is below ``min_share`` of the subsystem
-    load in ``X`` (e.g. SE wind: ~0.02% of SE load in 2016-19). Their tiny reference variance makes
-    any later growth look like a fault, so they are left out of the monitoring matrix."""
+    load in ``X`` (e.g. SE wind before 2025). Their tiny reference variance makes any later growth
+    look like a fault, so they are left out of the monitoring matrix."""
     out = []
     for c in X.columns:
         sub, qty = c.split("_", 1)
-        if qty in ("load", "ear", "ena") or f"{sub}_load" not in X:
+        if qty == "load" or f"{sub}_load" not in X:
             continue
         if X[c].abs().mean() < min_share * X[f"{sub}_load"].mean():
             out.append(c)

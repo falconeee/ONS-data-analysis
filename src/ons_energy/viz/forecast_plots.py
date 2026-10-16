@@ -10,7 +10,7 @@ import pandas as pd
 import polars as pl
 
 from ons_energy.calendar.segments import DAY_TYPES
-from ons_energy.utils.io import PROCESSED_DIR
+from ons_energy.utils import PROCESSED_DIR
 from ons_energy.viz.style import EVENT_FILL, INK, INK_2, MODEL_COLORS, SEQ_LIGHT, SEQ_MID, apply_style
 
 

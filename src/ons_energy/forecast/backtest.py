@@ -17,9 +17,7 @@ from ons_energy.features.forecast import build_panel
 from ons_energy.forecast import models as factory
 from ons_energy.forecast.config import BacktestConfig
 from ons_energy.forecast.intervals import add_rolling_conformal
-from ons_energy.utils.io import INTERIM_DIR, PROCESSED_DIR
-from ons_energy.utils.logging import get_logger
-from ons_energy.utils.seed import set_seed
+from ons_energy.utils import INTERIM_DIR, PROCESSED_DIR, get_logger, set_seed
 
 log = get_logger(__name__)
 

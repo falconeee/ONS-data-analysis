@@ -1,10 +1,12 @@
-"""Run one MSPC experiment (configs are built in the anomaly notebook with :func:`mspc_config`).
+"""One MSPC experiment: a detector (PCA or MSCVAE) on the hourly matrix, evaluated on known events.
 
-Pipeline: monitoring matrix -> residualizer (fitted on the reference) -> reference segments with
-known events removed -> detector.fit -> detector.score on the monitored span -> persistence rule
--> event-based evaluation + contributions. Every detector goes through exactly this path.
+Pipeline, identical for both detectors: hourly matrix -> drop negligible sources -> weekly-baseline
+residuals -> reference segments without known events -> fit -> score from ``monitor_start`` ->
+persistence rule (m of the last n hours) -> per-event detection, delay and contributions, and the
+false-alarm rate (FAR) on normal hours (outside the reference and away from every known event).
 """
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
@@ -13,204 +15,174 @@ import pandas as pd
 from pydantic import Field
 
 from ons_energy.anomaly.base import Detector, persistent_alarm
-from ons_energy.anomaly.deseason import make_residualizer
-from ons_energy.anomaly.evaluate import evaluate_events, event_windows, normal_mask, summary
 from ons_energy.calendar.events import all_events
-from ons_energy.config import StrictModel
-from ons_energy.features.mspc import daily_matrix, hourly_matrix, negligible_variables
-from ons_energy.utils.logging import get_logger
-from ons_energy.utils.seed import set_seed
+from ons_energy.features.mspc import hourly_matrix, negligible_variables, weekly_residuals
+from ons_energy.utils import StrictModel, get_logger, set_seed
 
 log = get_logger(__name__)
 
-HOURLY_EVENT_KINDS = ["blackout", "interruption"]
-DAILY_EVENT_KINDS = ["hydro_crisis", "covid", "strike", "blackout", "methodology_break"]
-
-
-class DetectorSpec(StrictModel):
-    kind: Literal["pca", "dpca", "rpca", "mscvae"]
-    params: dict[str, Any] = Field(default_factory=dict)
+EVENT_KINDS = ["blackout", "interruption"]  # fast events the detectors should catch
+NOT_NORMAL_KINDS = EVENT_KINDS + ["covid", "strike"]  # also kept out of the reference and of the FAR
+MIN_EVENT_LEN = pd.Timedelta("6h")
 
 
 class MSPCConfig(StrictModel):
     name: str
-    scale: Literal["hourly", "daily"]
-    preprocess: Literal["raw", "calendar", "weekly_baseline"]
-    preprocess_params: dict[str, Any] = Field(default_factory=dict)
-    reference: list[tuple[date, date]]
-    monitor: tuple[date, date | None]
-    detector: DetectorSpec
-    persistence: tuple[int, int] = (3, 4)  # alarm if >= m of the last n points exceed the limit
-    event_kinds: list[str] | None = None
-    min_interruption_mw: float = 1000.0
-    exclude_events_from_reference: bool = True
+    detector: Literal["pca", "mscvae"]
+    params: dict[str, Any] = Field(default_factory=dict)  # passed to PCAMonitor / MSCVAEDetector
+    # two normal windows around the 2023-04 MMGD methodology break (known events are removed)
+    reference: list[tuple[date, date]] = [(date(2022, 6, 1), date(2023, 4, 28)), (date(2023, 9, 1), date(2024, 8, 31))]
+    monitor_start: date = date(2010, 1, 1)
+    persistence: tuple[int, int] = (3, 4)  # alarm if >= m of the last n hours exceed the limit
+    min_interruption_mw: float = 1000.0  # load interruptions at least this large are events
     min_share: float = 0.01  # drop sources below this share of the subsystem load (reference)
-    normal_margin: str = "7D"  # distance from any event for a point to count as "normal"
-    event_min_len: str | None = None
+    normal_margin: str = "2D"  # distance from any event for an hour to count as "normal"
     seed: int = 42
 
 
-# Shared settings per scale. Hourly: two normal windows around the 2023-04 MMGD break (events are
-# excluded). Daily: pre-COVID, pre-methodology-break normal operation.
-HOURLY_BASE: dict[str, Any] = {
-    "scale": "hourly",
-    "reference": [(date(2022, 6, 1), date(2023, 4, 28)), (date(2023, 9, 1), date(2024, 8, 31))],
-    "monitor": (date(2010, 1, 1), None),
-    "persistence": (3, 4),
-    "normal_margin": "2D",
-}
-DAILY_BASE: dict[str, Any] = {
-    "scale": "daily",
-    "reference": [(date(2016, 1, 1), date(2019, 12, 31))],
-    "monitor": (date(2010, 1, 1), None),
-    "persistence": (3, 5),
-    "normal_margin": "30D",
-}
+@dataclass(frozen=True)
+class EventWindow:
+    event_id: str
+    kind: str
+    start: pd.Timestamp
+    end: pd.Timestamp
+    subsystems: tuple[str, ...]
 
 
-def mspc_config(
-    scale: Literal["hourly", "daily"], name: str, preprocess: str, kind: str, label: str | None = None, **params: Any
-) -> MSPCConfig:
-    """``MSPCConfig`` from the scale preset. ``label`` is the detector's display name; ``params`` go
-    to the detector, except keys that are ``MSPCConfig`` fields (e.g. ``persistence``,
-    ``reference``, ``preprocess_params``), which override the preset."""
-    base = dict(HOURLY_BASE if scale == "hourly" else DAILY_BASE)
-    if label:
-        params["name"] = label
-    for k in list(params):
-        if k in MSPCConfig.model_fields and k not in ("name", "detector"):
-            base[k] = params.pop(k)
-    return MSPCConfig(name=name, preprocess=preprocess, detector=DetectorSpec(kind=kind, params=params), **base)
-
-
-def make_detector(spec: DetectorSpec) -> Detector:
-    p = dict(spec.params)
-    if spec.kind == "pca":
+def make_detector(cfg: MSPCConfig) -> Detector:
+    if cfg.detector == "pca":
         from ons_energy.anomaly.pca import PCAMonitor
 
-        return PCAMonitor(**p)
-    if spec.kind == "dpca":
-        from ons_energy.anomaly.dpca import DPCAMonitor
-
-        return DPCAMonitor(**p)
-    if spec.kind == "rpca":
-        from ons_energy.anomaly.rpca import MovingWindowPCA
-
-        return MovingWindowPCA(**p)
+        return PCAMonitor(**cfg.params)
     from ons_energy.anomaly.mscvae_adapter import MSCVAEDetector
 
-    if "window_sizes" in p:
-        p["window_sizes"] = tuple(p["window_sizes"])
-    return MSCVAEDetector(**p)
+    return MSCVAEDetector(**cfg.params)
 
 
-def _segments(df: pd.DataFrame, drop: np.ndarray, min_len: int) -> list[pd.DataFrame]:
-    """Contiguous runs of rows not in ``drop`` with at least ``min_len`` rows."""
-    keep = ~drop
+def event_windows(min_mw: float, kinds: list[str], start, end) -> list[EventWindow]:
+    """Events of ``kinds`` overlapping [start, end], on the hourly grid, lasting at least 6 h."""
+    out = []
+    for r in all_events(min_mw).to_pandas().itertuples():
+        s, e = pd.Timestamp(r.start), pd.Timestamp(r.end)
+        if r.kind in kinds and e >= pd.Timestamp(start) and s <= pd.Timestamp(end):
+            s = s.floor("h")
+            out.append(EventWindow(r.event_id, r.kind, s, max(e.ceil("h"), s + MIN_EVENT_LEN), tuple(r.subsystems)))
+    return out
+
+
+def _in_windows(index: pd.DatetimeIndex, windows: list[EventWindow], margin: pd.Timedelta) -> np.ndarray:
+    hit = np.zeros(len(index), bool)
+    for w in windows:
+        hit |= (index >= w.start - margin) & (index <= w.end + margin)
+    return hit
+
+
+def _in_reference(index: pd.DatetimeIndex, reference: list[tuple[date, date]]) -> list[np.ndarray]:
+    return [(index >= pd.Timestamp(a)) & (index < pd.Timestamp(b) + pd.Timedelta("1D")) for a, b in reference]
+
+
+def _segments(df: pd.DataFrame, keep: np.ndarray, min_len: int = 48) -> list[pd.DataFrame]:
+    """Contiguous runs of kept rows with at least ``min_len`` rows."""
     run = np.cumsum(np.r_[True, keep[1:] != keep[:-1]])
     return [g for _, g in df[keep].groupby(run[keep]) if len(g) >= min_len]
 
 
-def run_mspc(cfg: MSPCConfig) -> dict[str, Any]:
-    set_seed(cfg.seed)
-    hourly = cfg.scale == "hourly"
-    freq = "h" if hourly else "D"
-    m_start, m_end = cfg.monitor
-    first = min([cfg.reference[0][0], m_start])
-    warm = pd.Timedelta(days=35)  # history for weekly baselines / lags
-    start = (pd.Timestamp(first) - warm).strftime("%Y-%m-%d")
-    end = (pd.Timestamp(m_end) + pd.Timedelta(hours=23)).strftime("%Y-%m-%d %H:%M:%S") if m_end else None
-    X = hourly_matrix(start, end) if hourly else daily_matrix(start, end)
-
-    events = all_events(cfg.min_interruption_mw).to_pandas()
-    kinds = cfg.event_kinds or (HOURLY_EVENT_KINDS if hourly else DAILY_EVENT_KINDS)
-    min_len = cfg.event_min_len or ("6h" if hourly else "1D")
-    windows_all = event_windows(events, freq, kinds + ["blackout", "interruption", "covid", "strike"], X.index[0], X.index[-1], min_len)
-
-    ref_masks = [(X.index >= pd.Timestamp(a)) & (X.index <= pd.Timestamp(b) + pd.Timedelta(hours=23)) for a, b in cfg.reference]
-    dropped = negligible_variables(pd.concat([X[m] for m in ref_masks]), cfg.min_share)
-    X = X.drop(columns=dropped)
-    log.info("%s: dropped negligible variables %s", cfg.name, dropped)
-    ref_raw = [X[m] for m in ref_masks]
-    resid = make_residualizer(cfg.preprocess, hourly, **cfg.preprocess_params).fit(ref_raw).transform(X)
-
-    event_rows = np.zeros(len(X), bool)
-    if cfg.exclude_events_from_reference:
-        for w in windows_all:
-            event_rows |= (X.index >= w.start - pd.Timedelta("1D")) & (X.index <= w.end + pd.Timedelta("1D"))
-    reference = []
-    for m in ref_masks:
-        seg_drop = ~m | event_rows | resid.isna().any(axis=1).to_numpy()
-        reference += _segments(resid, seg_drop, min_len=48 if hourly else 30)
-    log.info("%s: %d reference segments, %d rows", cfg.name, len(reference), sum(len(r) for r in reference))
-
-    det = make_detector(cfg.detector).fit(reference)
-    mon = resid[resid.index >= pd.Timestamp(m_start)]
-    scores = det.score(mon)
-    alarm = persistent_alarm(scores["alarm_raw"], *cfg.persistence)
-
-    windows = [w for w in event_windows(events, freq, kinds, m_start, mon.index[-1], min_len)]
-    ev = evaluate_events(scores, alarm, windows, det, mon)
-    normal = normal_mask(mon.index, windows_all, cfg.reference, cfg.normal_margin)
-    summ = {"name": cfg.name, "detector": det.name, "scale": cfg.scale, "preprocess": cfg.preprocess,
-            **summary(scores, alarm, normal, ev), "n_vars": X.shape[1], "dropped": ";".join(dropped)}
-    if hasattr(det, "ref_alarm_rate_"):
-        summ["ref_alarm_rate"] = det.ref_alarm_rate_
-    if hasattr(det, "k_"):
-        summ["k"] = det.k_
-    if hasattr(det, "threshold_in_sample_"):
-        # FAR the author's in-sample SPOT threshold would have produced
-        raw_is = (scores["phi"] > det.threshold_in_sample_).fillna(False)
-        summ["far_in_sample_threshold"] = float(persistent_alarm(raw_is, *cfg.persistence)[normal & scores["ratio"].notna().to_numpy()].mean())
-
-    scores = scores.assign(alarm=alarm)
-    contrib = _event_contributions(det, mon, scores, alarm, windows)
-    return {"summary": summ, "events": ev, "scores": scores, "alarm": alarm, "contributions": contrib, "detector": det, "data": mon}
-
-
-def _event_contributions(det, data, scores, alarm, windows) -> pd.DataFrame:
-    """Variable contributions per event window (alarmed points if any, else the whole window)."""
-    rows = []
+def evaluate_events(
+    scores: pd.DataFrame, windows: list[EventWindow], detector: Detector, data: pd.DataFrame, top: int = 5
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Per event: detected?, delay of the first persistent alarm, max statistic/limit, and the
+    variable contributions over the alarmed hours (all event hours if none alarmed)."""
+    idx, alarm = scores.index, scores["alarm"].to_numpy()
+    rows, contribs = [], []
     for w in windows:
-        sel = (scores.index >= w.start) & (scores.index <= w.end) & scores["ratio"].notna().to_numpy()
-        if not sel.any():
-            continue
-        mask = sel & alarm.to_numpy() if (sel & alarm.to_numpy()).any() else sel
-        try:
-            c = det.contributions(data, mask)
-        except Exception as exc:
-            log.warning("contributions failed for %s: %s", w.event_id, exc)
-            continue
-        rows.append(c.assign(event_id=w.event_id))
-    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["variable", "subsystem", "score", "pct", "event_id"])
+        sel = (idx >= w.start) & (idx <= w.end)
+        hits = sel & alarm
+        valid = sel & scores["ratio"].notna().to_numpy()
+        mask = valid & alarm if (valid & alarm).any() else valid
+        contrib = None
+        if mask.any():
+            try:
+                contrib = detector.contributions(data, mask)
+                contribs.append(contrib.assign(event_id=w.event_id))
+            except Exception as exc:  # contributions are diagnostic only
+                log.warning("contributions failed for %s: %s", w.event_id, exc)
+        rows.append({
+            "event_id": w.event_id, "kind": w.kind, "start": w.start, "end": w.end,
+            "subsystems": ";".join(w.subsystems), "detected": bool(hits.any()),
+            "delay_h": (idx[hits][0] - w.start) / pd.Timedelta(hours=1) if hits.any() else np.nan,
+            "max_ratio": float(scores.loc[sel, "ratio"].max()) if sel.any() else np.nan,
+            "alarm_share": float(alarm[sel].mean()) if sel.any() else np.nan,
+            "top_contributors": "; ".join(f"{r.variable} ({r.pct:.0f}%)" for r in contrib.head(top).itertuples()) if contrib is not None else "",
+            "top_subsystem_match": bool(contrib.iloc[0]["subsystem"] in w.subsystems) if contrib is not None and len(contrib) else np.nan,
+        })
+    columns = ["variable", "subsystem", "score", "pct", "event_id"]
+    return pd.DataFrame(rows), (pd.concat(contribs, ignore_index=True) if contribs else pd.DataFrame(columns=columns))
 
 
-def matched_operating_point(cfg: MSPCConfig, scores: pd.DataFrame, target_far: float = 0.05) -> dict[str, float]:
-    """Detection rate when each detector's threshold on ``ratio`` is moved so that its persistent
-    false-alarm rate on normal periods equals ``target_far`` (operating-point-free comparison).
-    Uses the scores returned by :func:`run_mspc`; nothing is refitted."""
-    hourly = cfg.scale == "hourly"
-    freq = "h" if hourly else "D"
-    events = all_events(cfg.min_interruption_mw).to_pandas()
-    kinds = cfg.event_kinds or (HOURLY_EVENT_KINDS if hourly else DAILY_EVENT_KINDS)
-    min_len = cfg.event_min_len or ("6h" if hourly else "1D")
-    idx = scores.index
-    windows_all = event_windows(events, freq, kinds + ["blackout", "interruption", "covid", "strike"], idx[0], idx[-1], min_len)
-    windows = event_windows(events, freq, kinds, cfg.monitor[0], idx[-1], min_len)
-    normal = normal_mask(idx, windows_all, cfg.reference, cfg.normal_margin) & scores["ratio"].notna().to_numpy()
-    ratio = scores["ratio"]
+def run_mspc(cfg: MSPCConfig) -> dict[str, Any]:
+    """Fit on the reference, score from ``monitor_start`` and evaluate. Returns summary, events,
+    scores (with persistent ``alarm``), contributions, detector, data and the normal-hours mask."""
+    set_seed(cfg.seed)
+    first = min(cfg.reference[0][0], cfg.monitor_start)
+    X = hourly_matrix((pd.Timestamp(first) - pd.Timedelta(days=35)).strftime("%Y-%m-%d"))  # 4-week warm-up
 
-    def far_at(tau: float) -> tuple[float, pd.Series]:
-        al = persistent_alarm((ratio > tau).fillna(False), *cfg.persistence)
-        return float(al[normal].mean()), al
+    ref_masks = _in_reference(X.index, cfg.reference)
+    dropped = negligible_variables(pd.concat([X[m] for m in ref_masks]), cfg.min_share)
+    log.info("%s: dropped negligible variables %s", cfg.name, dropped)
+    resid = weekly_residuals(X.drop(columns=dropped))
+
+    not_normal = event_windows(cfg.min_interruption_mw, NOT_NORMAL_KINDS, resid.index[0], resid.index[-1])
+    near_event = _in_windows(resid.index, not_normal, pd.Timedelta("1D"))
+    complete = resid.notna().all(axis=1).to_numpy()
+    reference = [seg for m in ref_masks for seg in _segments(resid, m & ~near_event & complete)]
+    log.info("%s: %d reference segments, %d hours", cfg.name, len(reference), sum(len(r) for r in reference))
+
+    det = make_detector(cfg).fit(reference)
+    data = resid[resid.index >= pd.Timestamp(cfg.monitor_start)]
+    scores = det.score(data)
+    scores["alarm"] = persistent_alarm(scores["alarm_raw"], *cfg.persistence)
+
+    windows = [w for w in not_normal if w.kind in EVENT_KINDS and w.end >= data.index[0]]
+    events, contrib = evaluate_events(scores, windows, det, data)
+    normal = (
+        ~_in_windows(data.index, not_normal, pd.Timedelta(cfg.normal_margin))
+        & ~np.any(_in_reference(data.index, cfg.reference), axis=0)
+        & scores["ratio"].notna().to_numpy()
+    )
+    summ = {
+        "name": cfg.name, "detector": det.name, "n_vars": len(det.variables_),
+        "far": float(scores["alarm"][normal].mean()),
+        "detection_rate": float(events["detected"].mean()) if len(events) else np.nan,
+        "median_delay_h": float(events["delay_h"].median()) if events["detected"].any() else np.nan,
+        "n_events": len(events),
+        "top_subsystem_match": float(events["top_subsystem_match"].mean()) if len(events) else np.nan,
+        "n_normal_hours": int(normal.sum()),
+    }
+    if hasattr(det, "ref_alarm_rate_"):  # PCA
+        summ |= {"k": det.k_, "ref_alarm_rate": det.ref_alarm_rate_}
+    if hasattr(det, "threshold_in_sample_"):  # MSCVAE: FAR the author's in-sample SPOT threshold would give
+        raw = (scores["phi"] > det.threshold_in_sample_).fillna(False)
+        summ["far_in_sample_threshold"] = float(persistent_alarm(raw, *cfg.persistence)[normal].mean())
+    return {"config": cfg, "summary": summ, "events": events, "scores": scores, "contributions": contrib,
+            "detector": det, "data": data, "normal": normal, "windows": windows}
+
+
+def matched_operating_point(result: dict[str, Any], target_far: float = 0.05) -> dict[str, float]:
+    """Detection rate when the threshold on ``ratio`` is moved so that the persistent FAR on normal
+    hours equals ``target_far``: compares detectors at the same operating point (nothing refitted)."""
+    scores, normal, windows = result["scores"], result["normal"], result["windows"]
+    persistence, ratio, idx = result["config"].persistence, result["scores"]["ratio"], result["scores"].index
+
+    def alarms(tau: float) -> pd.Series:
+        return persistent_alarm((ratio > tau).fillna(False), *persistence)
 
     lo, hi = float(np.nanquantile(ratio[normal], 0.5)), float(np.nanmax(ratio[normal]))
     for _ in range(50):  # bisection on the threshold (FAR decreases with tau)
         mid = (lo + hi) / 2
-        far, _ = far_at(mid)
-        lo, hi = (mid, hi) if far > target_far else (lo, mid)
-    far, al = far_at(hi)
+        lo, hi = (mid, hi) if alarms(mid)[normal].mean() > target_far else (lo, mid)
+    al = alarms(hi)
     hits = [bool(al[(idx >= w.start) & (idx <= w.end)].any()) for w in windows]
     curated = [h for h, w in zip(hits, windows) if w.kind != "interruption"]
-    return {"tau": hi, "far": far, "detection_rate": float(np.mean(hits)) if hits else np.nan, "n_events": len(hits),
-            "curated_detection_rate": float(np.mean(curated)) if curated else np.nan, "n_curated": len(curated)}
+    return {"detector": result["summary"]["detector"], "tau": hi, "far": float(al[normal].mean()),
+            "detection_rate": float(np.mean(hits)) if hits else np.nan, "n_events": len(hits),
+            "blackout_detection_rate": float(np.mean(curated)) if curated else np.nan, "n_blackouts": len(curated)}

@@ -1,4 +1,4 @@
-"""Common detector interface so PCA, DPCA, RPCA and MSCVAE go through the same evaluation.
+"""Common detector interface so PCA and MSCVAE go through the same evaluation.
 
 Data convention: ``pandas.DataFrame`` indexed by a regular ``DatetimeIndex``, one column per
 monitored variable named ``<subsystem>_<quantity>`` (e.g. ``NE_load``).

@@ -334,3 +334,30 @@ Esta seção substitui o layout da §3 e as convenções de CLI/YAML das seçõe
 - **Cache de previsões em `data/interim/forecasts/`.** Os backtests salvos permitem comparar
   LightGBM e os modelos torch, que precisam de kernels separados (libomp), sem retreinar.
 
+
+## 11. Enxugamento: só PCA e MSCVAE, sem testes (15/10/2026)
+
+Objetivo: menos código e menos conceitos, mantendo o mesmo protocolo de avaliação.
+
+- **Detecção de anomalias:**
+  - Ficam só dois detectores, ambos na escala horária: **PCA** (T²/SPE, limites empíricos por KDE,
+    contribuições RBC) e **MSCVAE**.
+  - Saíram:
+    - DPCA, RPCA e a escala diária;
+    - os pré-processamentos `raw` e `calendar`;
+    - os limites F/Box/Jackson-Mudholkar/SPOT do PCA e as contribuições CDC.
+  - O pré-processamento é fixo: resíduos de linha de base semanal.
+  - A crise hídrica de 2021 fica na EDA (EAR/ENA).
+  - O pacote `anomaly/` tem agora `base`, `pca`, `mscvae`, `mscvae_adapter` e `experiment`, que
+    absorveu a avaliação por eventos.
+  - O `MSPCConfig` ficou com `name`, `detector` (`pca`|`mscvae`), `params` e defaults da referência
+    horária.
+- **Outras simplificações:**
+  - `utils/` e `config.py` viraram um único `ons_energy/utils.py`.
+  - O teste de Diebold-Mariano foi para `forecast/metrics.py`.
+  - O modo de validação do `BacktestConfig` foi removido; `eval_start` é o início do teste.
+  - `schemas.py` valida só os arquivos brutos.
+- **Testes:** removidos a pedido do autor. A verificação é feita importando os módulos, executando o
+  notebook 01 e validando as configurações dos notebooks 02–04.
+- **Mantidos:** clima (Open-Meteo, cenários `perfect`/`honest`) e experimentos globais em 4
+  subsistemas, como opções nos notebooks.

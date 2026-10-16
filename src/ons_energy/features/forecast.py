@@ -15,8 +15,7 @@ import polars as pl
 from ons_energy.calendar.events import all_events, hourly_event_flags
 from ons_energy.calendar.holidays import daily_calendar
 from ons_energy.data.clean import add_utc
-from ons_energy.utils.io import PROCESSED_DIR
-from ons_energy.utils.logging import get_logger
+from ons_energy.utils import PROCESSED_DIR, get_logger
 
 log = get_logger(__name__)
 

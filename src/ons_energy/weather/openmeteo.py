@@ -21,8 +21,7 @@ from ons_energy.calendar.holidays import SUBSYSTEMS, _states_cfg, uf_load_shares
 from ons_energy.data.catalog import OpenMeteoSpec
 from ons_energy.data.ckan import http_session
 from ons_energy.data.clean import regularize, utc_to_local_naive
-from ons_energy.utils.io import PROCESSED_DIR, RAW_DIR
-from ons_energy.utils.logging import get_logger
+from ons_energy.utils import PROCESSED_DIR, RAW_DIR, get_logger
 
 log = get_logger(__name__)
 

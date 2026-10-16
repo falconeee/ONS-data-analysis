@@ -10,7 +10,7 @@ Project-specific behaviour lives here, not in the algorithm:
    optimistic. The tail ``val_fraction`` of each reference period is held out; the SPOT threshold
    and the per-variable RCA baseline are recalibrated on it. Both thresholds are kept.
 3. **Bounded SPOT.** ``_pot_eval`` loops ``while True``; here the same procedure runs with an
-   iteration cap (``limits.spot_limit``).
+   iteration cap (:func:`spot_limit`).
 4. **Missing values.** The generator turns NaN into 0 (the mean). Gaps are interpolated before
    (short) and counted, so missing data is never silently scored as "normal".
 5. **Stride.** Training may use ``stride > 1`` (memory); scoring always uses stride 1.
@@ -21,12 +21,30 @@ import pandas as pd
 import torch
 
 from ons_energy.anomaly.base import Detector, contribution_frame, finish_scores
-from ons_energy.anomaly.limits import spot_limit
-from ons_energy.anomaly.mscvae import MSCVAE
+from ons_energy.anomaly.mscvae import MSCVAE, SPOT
 from ons_energy.features.mspc import variable_table
-from ons_energy.utils.logging import get_logger
+from ons_energy.utils import get_logger
 
 log = get_logger(__name__)
+
+
+def spot_limit(values: np.ndarray, q: float, level: float = 0.98, max_iter: int = 2000) -> float:
+    """EVT threshold (SPOT / GPD tail fit) with exceedance probability ``q``, as in MSCVAE, but
+    lowering the peak level a bounded number of times when the GPD fit fails."""
+    v = np.asarray(values, float)
+    v = v[np.isfinite(v)]
+    lv = level
+    for _ in range(max_iter):
+        try:
+            s = SPOT(q)
+            s.fit(v, v)
+            s.initialize(level=lv, min_extrema=False, verbose=False)
+            if np.isfinite(s.extreme_quantile):
+                return float(s.extreme_quantile)
+        except Exception:  # GPD fit failed: lower the peak level, as MSCVAE._pot_eval does
+            pass
+        lv *= 0.999
+    raise RuntimeError("SPOT did not converge")
 
 
 def _impute(df: pd.DataFrame, limit: int = 6) -> tuple[pd.DataFrame, int]:

@@ -2,8 +2,8 @@
 
 Portfolio project on ONS (Brazilian grid operator) open data:
 **Module 1** hourly load forecasting per subsystem (TFT, N-BEATS, N-HiTS vs. SeasonalNaive / LightGBM, plus the ONS programmed load as an external benchmark);
-**Module 2** multivariate anomaly detection & diagnosis (PCA T²/SPE, DPCA, RPCA, MSCVAE).
-Full design, experimental setup and roadmap: `docs/PLAN.md` (pt-BR; §10 = current notebook-based layout). MVP subsystem is SE/CO.
+**Module 2** hourly multivariate anomaly detection & diagnosis (PCA T²/SPE vs. MSCVAE).
+Full design, experimental setup and roadmap: `docs/PLAN.md` (pt-BR; §10–11 = current notebook-based, simplified layout). MVP subsystem is SE/CO.
 
 ## Stack & environment
 - Python 3.12, managed with `uv` (`uv sync` installs core + `dev` + `dl` groups; run everything via `uv run`).
@@ -15,18 +15,19 @@ Full design, experimental setup and roadmap: `docs/PLAN.md` (pt-BR; §10 = curre
 - No linters, pre-commit, pandera or CI for now — don't add them unless asked.
 - **Never mix LightGBM and torch in one process** (macOS: two libomp builds -> segfault, exit 139, in
   either order). LightGBM lives in `02_forecast_baselines.ipynb`, torch in `03_forecast_deep.ipynb` /
-  `04_anomaly_detection.ipynb` (separate kernels); the backtest refuses mixed configs, `set_seed`
-  never imports torch, `tests/conftest.py` preloads LightGBM, and tests that *run* torch go to a
-  subprocess (see `tests/test_spot.py`). Notebook 03 compares all models by reading the stored
-  backtests (`merge_forecasts`), never by importing LightGBM.
+  `04_anomaly_detection.ipynb` (separate kernels); the backtest refuses mixed configs and `set_seed`
+  never imports torch. Notebook 03 compares all models by reading the stored backtests
+  (`merge_forecasts`), never by importing LightGBM.
 
 ## Layout rules
 - Algorithms live in `src/`; notebooks run the experiments and show the results (tables + figures inline, incl. actual vs predicted). Notebooks only define configs, call `ons_energy` functions and plot; no algorithm code in notebooks.
 - Order: `uv run ons ingest [-s ons|api|weather]` → `uv run ons build` → `01_data_eda` → `02_forecast_baselines` → `03_forecast_deep` → `04_anomaly_detection`.
-- Experiment configs are pydantic `StrictModel` objects built in notebook cells: `BacktestConfig(name=..., models=[ModelSpec(...)])` and `mspc_config(scale, name, preprocess, kind, label=..., **params)` (presets `HOURLY_BASE` / `DAILY_BASE` in `anomaly/experiment.py`). The data catalog is the constant `CATALOG` in `data/catalog.py`. No `configs/` folder; paths come from `ons_energy.utils.io`.
+- Experiment configs are pydantic `StrictModel` objects built in notebook cells: `BacktestConfig(name=..., models=[ModelSpec(...)])` and `MSPCConfig(name=..., detector="pca"|"mscvae", params={...})`. The data catalog is the constant `CATALOG` in `data/catalog.py`. No `configs/` folder.
+- Shared helpers live in the single module `ons_energy.utils`: paths (`PROCESSED_DIR`, ...), `logger` / `get_logger`, `set_seed`, `StrictModel`.
+- Keep it lean: prefer extending an existing function over adding modules/options; no variant knobs that no notebook uses.
 - `viz/` functions take DataFrames and return the figure (no saving to disk). Backtests are cached in `data/interim/forecasts/<name>.parquet` (`run_or_load`, `load_forecasts`, `merge_forecasts`); MSPC results are returned in memory by `run_mspc`. Log runs to MLflow with `tracking.log_backtest` / `tracking.log_mspc`.
 - `data/` is never committed. Small curated tables (events, UF→subsystem maps) live in `resources/` (versioned).
-- Logging via `ons_energy.utils.logging` (`logger` / `get_logger(__name__)`), not `print`.
+- Logging via `ons_energy.utils` (`logger` / `get_logger(__name__)`), not `print`.
 
 ## Data conventions
 - Never assume ONS column names: resolve resources via CKAN `package_show` (`CATALOG` in `data/catalog.py`) and check the dataset JSON dictionary; validate against the expected-schema dicts in `data/schemas.py`. Schema drift must fail loudly.
@@ -40,18 +41,17 @@ Full design, experimental setup and roadmap: `docs/PLAN.md` (pt-BR; §10 = curre
 - Events: `resources/events.csv` (curated) + interruptions ≥ 1000 MW from `interrupcao_carga`, one event per disturbance; interruptions within 3 h of a curated blackout are dropped as duplicates.
 
 ## Modeling rules
-- No leakage: features at a forecast origin use only data available at that origin (day-ahead: origin D-1 12:00 local, data ≤ D-1 11:00, predict hours of D). Covered by `tests/test_features_leakage.py`.
-- Temporal splits only (train ≤ 2022, val 2023-05..12, test 2024+); rolling-origin backtests. No random CV.
+- No leakage: features at a forecast origin use only data available at that origin (day-ahead: origin D-1 12:00 local, data ≤ D-1 11:00, predict hours of D); lags are built by the Nixtla engines at each cutoff, conformal intervals use residuals of target days ≤ D-2.
+- Temporal splits only (train from 2015, test from `eval_start` = 2024-01-01); rolling-origin backtests. No random CV.
 - Observed/reanalysis weather used as a future covariate = "perfect-forecast" scenario; always label it. The "honest" scenario uses archived forecasts.
 - Report segment metrics by `day_type` always with the number of days; rare segments get bootstrap CIs.
-- MSPC: scaling/PCA/limits fitted on the reference period only. T²/SPE/limits/contributions are our own implementation and must be unit-tested.
-- All anomaly detectors implement the `Detector` interface in `anomaly/base.py` and are evaluated by the same `anomaly/evaluate.py` (same events, same preprocessing variants). Compare detectors also at a matched false-alarm rate (`matched_operating_point`), since their own limits sit at different operating points.
+- MSPC: only two detectors — PCA (`anomaly/pca.py`: T²/SPE, KDE limits, RBC contributions) and MSCVAE — on the hourly matrix as weekly-baseline residuals. Scaling/PCA/limits are fitted on the reference period only. No DPCA/RPCA/daily-scale variants.
+- Both implement the `Detector` interface (`anomaly/base.py`) and go through the same `run_mspc` pipeline and event evaluation (`anomaly/experiment.py`). Compare them also at a matched false-alarm rate (`matched_operating_point`), since their own limits sit at different operating points.
 - Variables below 1% of the subsystem load in the reference are dropped (`min_share`), and PCA standardization uses a 1-unit std floor: near-constant reference variables otherwise explode z-scores when a new source is commissioned.
-- RPCA: excluding every alarmed point from the window freezes the model after a permanent change (new plants, methodology breaks). Use `exclude_ratio` / `accept_after`; the hourly RPCA uses no exclusion.
 - `anomaly/mscvae.py` is the author's MSCVAE algorithm: do NOT refactor or "fix" it without asking. Project-specific behavior (warm-up with real history, out-of-sample SPOT calibration, `df_sistema` mapping, NaN handling) lives in `anomaly/mscvae_adapter.py`.
-- Seeds fixed via `ons_energy.utils.seed.set_seed` (python, numpy, torch, MPS, lightning); pass the same seed to LightGBM / scikit-learn configs.
+- Seeds fixed via `ons_energy.utils.set_seed` (python, numpy, torch, MPS, lightning); pass the same seed to LightGBM configs.
 
 ## Code style
 - English identifiers, docstrings and commit messages; keep ONS domain terms (EAR, ENA, MMGD, SIN, SE/CO) as-is. User-facing chat can be in Portuguese.
 - Type hints on public functions; match the surrounding style and comment density.
-- Tests: `uv run pytest` (network tests marked `@pytest.mark.network` are deselected by default; run them with `-m network`). Use small fixtures in `tests/fixtures/`, never full ONS downloads.
+- No test suite (removed on purpose to keep the repo small). Check changes by importing the modules, running notebook 01 and dry-running the config cells of notebooks 02–04 (don't train models unless asked).

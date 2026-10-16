@@ -222,7 +222,7 @@ __marimo__/
 # --- Project-specific ---
 .DS_Store
 # Data never goes to git (raw/processed caches, ONS downloads)
-data/
+/data/
 # Experiment tracking / training artifacts
 mlruns/
 mlflow.db

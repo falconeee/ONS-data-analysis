@@ -1,1 +1,1 @@
-"""Multivariate anomaly detection: PCA (T2/SPE), DPCA, RPCA, MSCVAE."""
+"""Multivariate anomaly detection: PCA (T²/SPE) and MSCVAE."""

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from ons_energy.config import StrictModel
+from ons_energy.utils import StrictModel
 
 ModelKind = Literal["seasonal_naive", "lgbm", "nhits", "nbeats_i", "nbeatsx", "tft", "ons_programmed"]
 
@@ -20,11 +20,8 @@ class BacktestConfig(StrictModel):
     name: str
     subsystems: list[str] = ["SE"]
     train_start: date = date(2015, 1, 1)
-    # Evaluation window. `validation` mode evaluates [val_start, test_start) instead (tuning only).
-    mode: Literal["test", "validation"] = "test"
-    val_start: date = date(2023, 5, 1)
-    test_start: date = date(2024, 1, 1)
-    test_end: date | None = None  # default: last full day in the data
+    eval_start: date = date(2024, 1, 1)  # test period: eval_start -> eval_end (default: last full day)
+    test_end: date | None = None
     # Day-ahead setup: issued at D-1 `origin_hour`:00 with data up to the previous hour; the
     # evaluated steps are the 24 hours of D.
     origin_hour: int = 12
@@ -39,11 +36,5 @@ class BacktestConfig(StrictModel):
     seed: int = 42
     models: list[ModelSpec]
 
-    @property
-    def eval_start(self) -> date:
-        return self.val_start if self.mode == "validation" else self.test_start
-
     def eval_end(self, last_day: date) -> date:
-        if self.mode == "validation":
-            return date.fromordinal(self.test_start.toordinal() - 1)
         return min(self.test_end or last_day, last_day)

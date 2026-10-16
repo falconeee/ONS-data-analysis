@@ -1,11 +1,11 @@
-"""Module 2 figures. Every function takes the outputs of ``run_mspc`` (scores / contributions /
-summaries) and returns the figure, so the notebooks show them inline."""
+"""Module 2 figures. Every function takes outputs of ``run_mspc`` (scores / contributions) and
+returns the figure, so the notebooks show them inline."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ons_energy.viz.style import DETECTOR_COLORS, EVENT_FILL, INK, INK_2, apply_style, detector_color
+from ons_energy.viz.style import EVENT_FILL, INK, INK_2, apply_style, detector_color
 
 
 def control_chart(panels: list[tuple[pd.DataFrame, str, str]], start: str, end: str, event: tuple[str, str], title: str) -> plt.Figure:
@@ -41,42 +41,6 @@ def contributions(items: list[tuple[pd.DataFrame, str]], event_id: str, title: s
         ax.set_title(label, fontsize=10)
         ax.set_xlabel("share of contribution (%)")
     fig.suptitle(title, x=0.01, ha="left", fontweight="bold")
-    fig.tight_layout()
-    return fig
-
-
-def daily_crisis(scores: pd.DataFrame, label: str, ear: pd.Series, start: str, end: str, crisis: tuple[str, str]) -> plt.Figure:
-    """Two panels sharing time (no dual axis): statistic/limit and SE EAR."""
-    apply_style()
-    s = scores.loc[start:end]
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(10, 5), sharex=True)
-    for ax in (a1, a2):
-        ax.axvspan(pd.Timestamp(crisis[0]), pd.Timestamp(crisis[1]), color=EVENT_FILL, zorder=0)
-    r = s["ratio"].clip(lower=1e-2)
-    a1.plot(r.index, r, color=detector_color(label), linewidth=1.3)
-    a1.axhline(1, color=INK, linewidth=1, linestyle=(0, (4, 3)))
-    a1.set_yscale("log")
-    a1.set_ylabel("max(T², SPE) / limit")
-    a1.set_title(f"{label} — daily model", fontsize=10)
-    e = ear.loc[start:end]
-    a2.plot(e.index, e, color=DETECTOR_COLORS["PCA"], linewidth=1.6)
-    a2.set_ylabel("SE/CO EAR (% of max)")
-    a2.annotate("2021 water crisis", (pd.Timestamp(crisis[0]), e.max()), fontsize=8, color=INK_2, va="top")
-    fig.suptitle("Slow anomaly: 2021 water crisis (shaded)", x=0.01, ha="left", fontweight="bold")
-    fig.tight_layout()
-    return fig
-
-
-def detector_tradeoff(summary: pd.DataFrame, title: str) -> plt.Figure:
-    """FAR vs detection rate, one labelled point per detector."""
-    apply_style()
-    fig, ax = plt.subplots(figsize=(7.5, 4.6))
-    for r in summary.itertuples():
-        ax.scatter(100 * r.far, 100 * r.detection_rate, s=70, color=detector_color(r.detector), edgecolor="#fcfcfb", linewidth=1.5, zorder=3)
-        ax.annotate(r.detector, (100 * r.far, 100 * r.detection_rate), xytext=(6, 4), textcoords="offset points", fontsize=8, color=INK)
-    ax.set_xlabel("False-alarm rate on normal periods (%)  ← better")
-    ax.set_ylabel("Events detected (%)  ↑ better")
-    ax.set_title(title)
     fig.tight_layout()
     return fig
 
